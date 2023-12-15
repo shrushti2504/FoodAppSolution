@@ -13,25 +13,37 @@ class BaseModel(models.Model):
 
 class Restaurant(BaseModel):
     restaurant_name = models.CharField(max_length=255)
-    owner_name = models.CharField(max_length=255)
-    owner_email = models.EmailField()
+    address = models.TextField()
+    latitude = models.FloatField()  # for location
+    longitude = models.FloatField()  # for location
     restaurant_contact_number = models.IntegerField()
-    fssai_license = models.ImageField()
-    license_registration_number = models.IntegerField()
-    license_expire_date = models.DateField()
+
     manager_name = models.CharField(max_length=255)
-    manager_email = models.EmailField()
     manager_contact_number = models.IntegerField()
-    pan_card = models.ImageField()
-    pan_card_number = models.CharField(max_length=15)
-    gst_certificate = models.ImageField()
+    manager_email = models.EmailField()
+    owner_name = models.CharField(max_length=255)
+    owner_contact_number = models.IntegerField()
+    owner_email = models.EmailField()
+
+    pan_card = models.FileField()
+    pan_cart_number = models.CharField(max_length=10)
+
+    fssai_license = models.FileField()
+    fssai_license_number = models.IntegerField()
+    fssai_expiration_date = models.DateField()
+
+    gst_certificate = models.FileField()
     gst_number = models.CharField(max_length=15)
-    bank_passbook = models.ImageField()
-    bank_account_number = models.IntegerField()
-    ifsc_code = models.CharField(max_length=11)
+
+    bank_passbook = models.FileField()
+    bank_account_number = models.CharField(max_length=255)
+    bank_ifsc_code = models.CharField(max_length=11)
+
+    cuisines = models.CharField(max_length=255)
     menu = models.ImageField()
-    cuisine = models.CharField(max_length=255)
-    logo = models.ImageField()
+
+    is_approved = models.BooleanField(default=False)
+    # when admin set this field as true then restaurant will be live for customers. Till then it will be consider restaurant as a requested restaurant.
 
     def __str__(self):
         return self.restaurant_name
