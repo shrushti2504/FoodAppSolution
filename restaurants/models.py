@@ -1,35 +1,7 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
-from django_enum import EnumField
 
 # Create your models here.
-
-
-class RestaurantDocumentsEnum(models.TextChoices):
-    PAN = "PAN"
-    GST = "GST"
-    FSSAI = "FSSAI"
-
-
-class UserType(models.TextChoices):
-    MANAGER = "MANAGER"
-    CUSTOMER = "CUSTOMER"
-    ADMIN = "ADMIN"
-    OWNER = "OWNER"
-    RIDER = "RIDER"
-
-
-class RestaurantStatus(models.TextChoices):
-    PENDING = "PENDING"
-    IN_REVIEW = "IN_REVIEW"
-    DECLINED = "DECLINED"
-    APPROVED = "APPROVED"
-
-
-class FoodType(models.TextChoices):
-    VEGETARIAN = "VEGETARIAN"
-    NON_VEGETARIAN = "NON_VEGETARIAN"
-    BOTH = "BOTH"
 
 
 class BaseModel(models.Model):
@@ -65,11 +37,18 @@ class CustomUser(BaseModel, AbstractUser):
 
     """
 
+    TYPE = (
+        ("MANAGER", "MANAGER"),
+        ("CUSTOMER", "CUSTOMER"),
+        ("ADMIN", "ADMIN"),
+        ("OWNER", "OWNER"),
+        ("RIDER", "RIDER"),
+    )
     first_name = models.CharField(max_length=255)
     last_name = models.CharField(max_length=255)
     email = models.EmailField()
     contact_number = models.IntegerField()
-    type = EnumField(UserType, default="CUSTOMER")
+    type = models.CharField(max_length=255, choices=TYPE, default="CUSTOMER")
 
     def __str__(self):
         return self.first_name + " " + self.last_name
@@ -85,22 +64,32 @@ class Location(BaseModel):
     Attributes:
 
     address(CharField): Proper/exact address like flat number,society name,floor , Office number etc.
-    restaurant(ForeignKey): Represent restaurant id
     latitude(FloatField): Used to fetch location
     longitude(FloatField): Used to fetch location
 
     """
 
     address = models.CharField(max_length=255)
-    restaurant = models.ForeignKey("Restaurant", on_delete=models.CASCADE)
     latitude = models.FloatField()
     longitude = models.FloatField()
 
-    def __str__(self):
-        return self.restaurant.restaurant_name
-
     class Meta:
         db_table = "restaurant_location"
+
+
+class Image(BaseModel):
+    """
+    This model represents Images for menu or bank images of restaurant
+
+    Attributes:
+
+    image(FileField): Upload multiple images for the menu or bank account images
+    """
+
+    image = models.FileField(upload_to="Documents/")
+
+    class Meta:
+        db_table = "restaurants_menuimage"
 
 
 class Restaurant(BaseModel):
@@ -109,8 +98,9 @@ class Restaurant(BaseModel):
 
     Attributes:
 
-    restaurant_name(CharField): name of the restaurant
-    restaurant_phone(IntegerField): contact number of restaurant
+    name(CharField): name of the restaurant
+    phone(IntegerField): contact number of restaurant
+    outlet(CharField): Choose the outlet of the restaurant (means type like cafe or diner etc.)
     invoicing_email(EmailField): A kind of business email.Will receive business related email notifications.
     is_open(BooleanField) : Set to true when restaurant is open
     owner_name(CharField): Name of the restaurant owner
@@ -118,7 +108,7 @@ class Restaurant(BaseModel):
     license_registration_image(FileField): FSSAI license image
     license_registration_number(IntegerField): FSSAI license number
     license_expiration_date(DateField): FSSAI license expire date
-    bank_account_image(FileField): Image of bank passbook / cancel cheque
+    bank_account_image(ManyToManyField): Image of bank passbook / cancel cheque
     bank_account_number(CharField): Bank account number
     bank_ifsc_code(CharField): Bank IFSC code
     parent_restaurant(ForeignKey): self referencing foreign key to ensure about restaurant's multiple branches.
@@ -127,8 +117,15 @@ class Restaurant(BaseModel):
 
     """
 
-    restaurant_name = models.CharField(max_length=255)
-    restaurant_phone = models.IntegerField()
+    OUTLET = (
+        ("Corner Cafe", "Corner Cafe"),
+        ("Main Street Diner", "Main Street Diner"),
+        ("SunnySide Grill", "SunnySide Grill"),
+        ("RiverSide Bistro", "RiverSide Bistro"),
+    )
+    name = models.CharField(max_length=255)
+    phone = models.IntegerField()
+    outlet = models.CharField(max_length=255, choices=OUTLET)
     invoicing_email = models.EmailField()
     is_open = models.BooleanField(default=False)
     owner_name = models.CharField(max_length=255)
@@ -138,7 +135,7 @@ class Restaurant(BaseModel):
     license_registration_number = models.IntegerField()
     license_expiration_date = models.DateField()
 
-    bank_account_image = models.FileField()
+    bank_account_image = models.ManyToManyField(Image)
     bank_account_number = models.CharField(max_length=255)
     bank_ifsc_code = models.CharField(max_length=11)
 
@@ -154,14 +151,18 @@ class Restaurant(BaseModel):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="location",
+        related_name="restaurants",
     )
     manager = models.ForeignKey(
-        CustomUser, on_delete=models.SET_NULL, null=True, blank=True
+        CustomUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="restaurants",
     )
 
     def __str__(self):
-        return self.restaurant_name
+        return self.name
 
     class Meta:
         db_table = "restaurants_restaurant"
@@ -179,8 +180,14 @@ class RestaurantDocument(BaseModel):
     document_image(FileFIeld): Image of document
     """
 
-    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE)
-    document_type = EnumField(RestaurantDocumentsEnum)
+    STATUS = (
+        ("PAN", "PAN"),
+        ("GST", "GST"),
+    )
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="restaurantdocument"
+    )
+    document_type = models.CharField(max_length=255, choices=STATUS)
     document_number = models.CharField(max_length=255)
 
     document_image = models.FileField(upload_to="Documents/")
@@ -203,30 +210,25 @@ class RestaurantRequest(BaseModel):
     reason(TextField): Reason if admin decline the request
     """
 
-    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE)
-    approval_status = EnumField(RestaurantStatus, default="PENDING")
+    RESTAURANT_STATUS = (
+        ("APPROVED", "APPROVED"),
+        ("PENDING", "PENDING"),
+        ("IN_REVIEW", "IN_REVIEW"),
+        ("DECLINED", "DECLINED"),
+    )
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="restaurantrequest"
+    )
+    approval_status = models.CharField(
+        max_length=255, choices=RESTAURANT_STATUS, default="PENDING"
+    )
     reason = models.TextField()
 
     def __str__(self):
-        return self.restaurant.restaurant_name
+        return self.restaurant.name
 
     class Meta:
         db_table = "restaurants_request"
-
-
-class MenuImage(BaseModel):
-    """
-    This model represents Images for menu of restaurant
-
-    Attributes:
-
-    image(FileField): Upload multiple images for the menu
-    """
-
-    image = models.FileField(upload_to="Documents/")
-
-    class Meta:
-        db_table = "restaurants_menuimage"
 
 
 class RestaurantMenu(BaseModel):
@@ -242,13 +244,20 @@ class RestaurantMenu(BaseModel):
 
     """
 
-    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE)
+    FOODTYPE = (
+        ("VEGETARIAN", "VEGETARIAN"),
+        ("NON_VEGETAIRAN", "NON_VEGETARIAN"),
+        ("BOTH", "BOTH"),
+    )
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="restaurantmenu"
+    )
     type_of_cuisine = models.CharField(max_length=255)
-    type_of_food = EnumField(FoodType)
-    image = models.ManyToManyField(MenuImage)
+    type_of_food = models.CharField(max_length=255, choices=FOODTYPE)
+    image = models.ManyToManyField(Image)
 
     def __str__(self):
-        return self.restaurant.restaurant_name
+        return self.restaurant.name
 
     class Meta:
         db_table = "restaurant_menu"
