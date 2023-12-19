@@ -1,13 +1,41 @@
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 
+
 # Create your models here.
+class UserManager(BaseUserManager):
+    def create_user(self, validated_data):
+        """Create a user."""
+
+        if not validated_data.get("email"):
+            raise ValueError("Users must have an email address")
+
+        user = self.model(
+            email=self.normalize_email(validated_data.get("email", "")),
+            first_name=validated_data.get("first_name"),
+            last_name=validated_data.get("last_name", ""),
+            contact_number=validated_data.get("contact_number", ""),
+            profile_pic=validated_data.get("profile_pic", ""),
+        )
+        user.save()
+        return user
+
+    def create_superuser(self, email, password):
+        """Create a superuser."""
+
+        super_user_obj = {}
+        super_user_obj["email"] = email
+        super_user_obj["password"] = password
+        super_user_obj["first_name"] = "Admin"
+        user = self.create_user(super_user_obj)
+        user.save()
+        return user
 
 
 class BaseModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    deleted_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(
         "CustomUser", on_delete=models.DO_NOTHING, null=True, blank=True
     )
@@ -17,10 +45,15 @@ class BaseModel(models.Model):
     deleted_by = models.ForeignKey(
         "CustomUser", on_delete=models.DO_NOTHING, null=True, blank=True
     )
-    is_acitve = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=False)
 
     class Meta:
         abstract = True
+
+
+def upload_image_path(filename):
+    upload_path = f"restaurant/documents/_{filename}"
+    return upload_path
 
 
 class CustomUser(BaseModel, AbstractUser):
@@ -34,7 +67,7 @@ class CustomUser(BaseModel, AbstractUser):
     email(EmailField): Email of user
     contact_number(IntegerField): Mobile number of user
     type(Enum): User type like Customer, restaurant owner ,admin or rider(driver)
-
+    profile_image(File): Profile pic of user
     """
 
     TYPE = (
@@ -45,16 +78,21 @@ class CustomUser(BaseModel, AbstractUser):
         ("RIDER", "RIDER"),
     )
     first_name = models.CharField(max_length=255)
-    last_name = models.CharField(max_length=255)
-    email = models.EmailField()
-    contact_number = models.IntegerField()
+    last_name = models.CharField(max_length=255, null=True, blank=True)
+    email = models.EmailField(unique=True)
+    contact_number = models.IntegerField(null=True, blank=True)
     type = models.CharField(max_length=255, choices=TYPE, default="CUSTOMER")
+    profile_image = models.FileField(null=True, blank=True)
+    email_verified = models.BooleanField(default=False)
+    objects = UserManager()
+
+    USERNAME_FIELD = "email"
 
     def __str__(self):
-        return self.first_name + " " + self.last_name
+        return f"{self.first_name} {self.last_name}"
 
     class Meta:
-        db_table = "user"
+        db_table = "users"
 
 
 class Location(BaseModel):
@@ -86,10 +124,28 @@ class Image(BaseModel):
     image(FileField): Upload multiple images for the menu or bank account images
     """
 
-    image = models.FileField(upload_to="Documents/")
+    image = models.FileField(upload_to=upload_image_path)
 
     class Meta:
-        db_table = "restaurants_menuimage"
+        db_table = "restaurant_image"
+
+
+class RestaurantOutlet(BaseModel):
+    """
+    This model represents restaurant outlet like roadside cafe , diner ,  grill or riverside cafe etc.
+
+    Attributes:
+
+    outlet_name(CharField): Outlet of the restaurant like roadside cafe , diner , riverside cafe etc.
+    """
+
+    outlet_name = models.CharField(max_length=255)
+
+    def __str__(self):
+        return self.outlet_name
+
+    class Meta:
+        db_table = "restaurant_outlets"
 
 
 class Restaurant(BaseModel):
@@ -100,7 +156,10 @@ class Restaurant(BaseModel):
 
     name(CharField): name of the restaurant
     phone(IntegerField): contact number of restaurant
-    outlet(CharField): Choose the outlet of the restaurant (means type like cafe or diner etc.)
+    outlet(Foreignkey): the outlet of the restaurant (means type like cafe or diner etc.)
+    cuisine(CharField): Cuisines of restaurants like Indian , Chinese , Panjabi etc.
+    type_of_food(CharField): Food type like vegetarian , non-vegetarian or both.
+    menu_image(ManyToManyField): Multiple images of restaurant menu
     invoicing_email(EmailField): A kind of business email.Will receive business related email notifications.
     is_open(BooleanField) : Set to true when restaurant is open
     owner_name(CharField): Name of the restaurant owner
@@ -117,21 +176,25 @@ class Restaurant(BaseModel):
 
     """
 
-    OUTLET = (
-        ("Corner Cafe", "Corner Cafe"),
-        ("Main Street Diner", "Main Street Diner"),
-        ("SunnySide Grill", "SunnySide Grill"),
-        ("RiverSide Bistro", "RiverSide Bistro"),
+    FOODTYPE = (
+        ("VEGETARIAN", "VEGETARIAN"),
+        ("NON_VEGETARIAN", "NON_VEGETARIAN"),
+        ("BOTH", "BOTH"),
     )
     name = models.CharField(max_length=255)
     phone = models.IntegerField()
-    outlet = models.CharField(max_length=255, choices=OUTLET)
+    outlet = models.ForeignKey(
+        RestaurantOutlet, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    cuisine = models.CharField(max_length=255)
+    type_of_food = models.CharField(max_length=255, choices=FOODTYPE)
+    menu_image = models.ManyToManyField(Image)
     invoicing_email = models.EmailField()
     is_open = models.BooleanField(default=False)
     owner_name = models.CharField(max_length=255)
     owner_email = models.EmailField()
 
-    license_registration_image = models.FileField()
+    license_registration_image = models.FileField(upload_to=upload_image_path)
     license_registration_number = models.IntegerField()
     license_expiration_date = models.DateField()
 
@@ -165,7 +228,7 @@ class Restaurant(BaseModel):
         return self.name
 
     class Meta:
-        db_table = "restaurants_restaurant"
+        db_table = "restaurant_restaurant"
 
 
 class RestaurantDocument(BaseModel):
@@ -180,23 +243,28 @@ class RestaurantDocument(BaseModel):
     document_image(FileFIeld): Image of document
     """
 
-    STATUS = (
-        ("PAN", "PAN"),
-        ("GST", "GST"),
-    )
     restaurant = models.ForeignKey(
         Restaurant, on_delete=models.CASCADE, related_name="restaurantdocument"
     )
-    document_type = models.CharField(max_length=255, choices=STATUS)
+    document_type = models.CharField(
+        max_length=255, help_text="type of documents as GST,PAN etc."
+    )
     document_number = models.CharField(max_length=255)
 
-    document_image = models.FileField(upload_to="Documents/")
+    document_image = models.FileField(upload_to=upload_image_path)
 
     def __str__(self):
         return self.document_type
 
     class Meta:
-        db_table = "restaurants_document"
+        db_table = "restaurant_documents"
+
+
+class RestaurantStatusEnum(models.TextChoices):
+    APPROVED = "APPROVED", "APPROVED"
+    PENDING = "PENDING", "PENDING"
+    IN_REVIEW = "IN_REVIEW", "IN_REVIEW"
+    DECLINED = "DECLINED", "DECLINED"
 
 
 class RestaurantRequest(BaseModel):
@@ -210,17 +278,11 @@ class RestaurantRequest(BaseModel):
     reason(TextField): Reason if admin decline the request
     """
 
-    RESTAURANT_STATUS = (
-        ("APPROVED", "APPROVED"),
-        ("PENDING", "PENDING"),
-        ("IN_REVIEW", "IN_REVIEW"),
-        ("DECLINED", "DECLINED"),
-    )
     restaurant = models.ForeignKey(
         Restaurant, on_delete=models.CASCADE, related_name="restaurantrequest"
     )
-    approval_status = models.CharField(
-        max_length=255, choices=RESTAURANT_STATUS, default="PENDING"
+    status = models.CharField(
+        max_length=255, choices=RestaurantStatusEnum.choices, default="PENDING"
     )
     reason = models.TextField()
 
@@ -228,36 +290,4 @@ class RestaurantRequest(BaseModel):
         return self.restaurant.name
 
     class Meta:
-        db_table = "restaurants_request"
-
-
-class RestaurantMenu(BaseModel):
-    """
-    This model represents restaurant's menu
-
-    Attributes:
-
-    restaurant(ForeignKey): Restaurant id
-    type_of_cuisine(CharField): Cuisines like chinese,indian etc.
-    type_of_food(Enum): Food available in restaurant like veg or non veg
-    image(ManyToManyField): Images of the restaurant menu
-
-    """
-
-    FOODTYPE = (
-        ("VEGETARIAN", "VEGETARIAN"),
-        ("NON_VEGETAIRAN", "NON_VEGETARIAN"),
-        ("BOTH", "BOTH"),
-    )
-    restaurant = models.ForeignKey(
-        Restaurant, on_delete=models.CASCADE, related_name="restaurantmenu"
-    )
-    type_of_cuisine = models.CharField(max_length=255)
-    type_of_food = models.CharField(max_length=255, choices=FOODTYPE)
-    image = models.ManyToManyField(Image)
-
-    def __str__(self):
-        return self.restaurant.name
-
-    class Meta:
-        db_table = "restaurant_menu"
+        db_table = "restaurant_request"
