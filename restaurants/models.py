@@ -5,13 +5,24 @@ from phonenumber_field.modelfields import PhoneNumberField
 # Create your models here.
 
 
+def validate_image_size(image):
+    image_size = image.size
+    max_size_mb = 5
+    max_size_bytes = max_size_mb * 1024 * 1024
+    if image_size > max_size_bytes:
+        print(f"Image size exceeds the maximum allowed size of {max_size_mb} MB.")
+        return False
+
+
 def upload_image_path(filename, instance):
     if instance.document_type:
-        upload_path = f"restaurant/documents/{instance.document_type}/{filename}"
+        upload_path = (
+            f"restaurant/documents/{instance.document_type.lower()}/{filename}"
+        )
     elif instance.bank_account_image:
-        upload_path = f"restaurant/documents/Bank/{filename}"
+        upload_path = f"restaurant/documents/bank/{filename}"
     else:
-        upload_path = f"restaurant/documents/License/{filename}"
+        upload_path = f"restaurant/documents/license/{filename}"
     return upload_path
 
 
@@ -69,7 +80,7 @@ class BaseModel(models.Model):
         blank=True,
         related_name="%(class)s_deleted_by",
     )
-    is_active = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=False, db_index=True)
 
     class Meta:
         abstract = True
@@ -96,19 +107,25 @@ class CustomUser(BaseModel, AbstractUser):
         ("OWNER", "OWNER"),
         ("RIDER", "RIDER"),
     )
-    first_name = models.CharField(max_length=255)
-    last_name = models.CharField(max_length=255, null=True, blank=True)
-    email = models.EmailField(unique=True)
-    contact_number = PhoneNumberField(null=True, blank=True)
-    type = models.CharField(max_length=255, choices=TYPES, default="CUSTOMER")
+    first_name = models.CharField(max_length=255, db_index=True)
+    last_name = models.CharField(max_length=255, null=True, blank=True, db_index=True)
+    email = models.EmailField(unique=True, db_index=True)
+    contact_number = PhoneNumberField(null=True, blank=True, db_index=True)
+    type = models.CharField(
+        max_length=255, choices=TYPES, default="CUSTOMER", db_index=True
+    )
     profile_image = models.ImageField(
         null=True,
         blank=True,
         upload_to=lambda instance, filename: f"users/{instance.type}/_{filename}",
+        validators=validate_image_size,
+        db_index=True,
     )
-    email_verified = models.BooleanField(default=False)
+    email_verified = models.BooleanField(default=False, db_index=True)
     is_superuser = models.BooleanField(
-        default=False, help_text="Designates that this user has all permissions"
+        default=False,
+        help_text="Designates that this user has all permissions",
+        db_index=True,
     )
     objects = UserManager()
 
@@ -133,15 +150,15 @@ class Location(BaseModel):
 
     """
 
-    address = models.CharField(max_length=255)
-    latitude = models.FloatField()
-    longitude = models.FloatField()
+    address = models.CharField(max_length=255, db_index=True)
+    latitude = models.FloatField(db_index=True)
+    longitude = models.FloatField(db_index=True)
 
     def __str__(self):
         return self.address
 
     class Meta:
-        db_table = "restaurant_locations"
+        db_table = "locations"
 
 
 class Image(models.Model):
@@ -150,13 +167,15 @@ class Image(models.Model):
 
     Attributes:
 
-    image(FileField): Upload multiple images for the menu or bank account images
+    image(ImageField): Upload multiple images for the menu or bank account images
     """
 
-    image = models.FileField(upload_to=upload_image_path)
+    image = models.ImageField(
+        upload_to=upload_image_path, validators=validate_image_size, db_index=True
+    )
 
 
-class RestaurantOutlet(BaseModel):
+class RestaurantOutlet(models.Model):
     """
     This model represents restaurant outlet like roadside cafe , diner ,  grill or riverside cafe etc.
 
@@ -165,7 +184,7 @@ class RestaurantOutlet(BaseModel):
     outlet_name(CharField): Outlet of the restaurant like roadside cafe , diner , riverside cafe etc.
     """
 
-    outlet_name = models.CharField(max_length=255)
+    outlet_name = models.CharField(max_length=255, db_index=True)
 
     def __str__(self):
         return self.outlet_name
@@ -190,7 +209,7 @@ class Restaurant(BaseModel):
     is_open(BooleanField) : Set to true when restaurant is open
     owner_name(CharField): Name of the restaurant owner
     owner_email(EmailField): Email address of restaurant owner
-    license_image(FileField): FSSAI license image
+    license_image(ImageField): FSSAI license image
     license_registration_number(IntegerField): FSSAI license number
     license_expiration_date(DateField): FSSAI license expire date
     bank_account_image(ManyToManyField): Image of bank passbook / cancel cheque
@@ -207,30 +226,31 @@ class Restaurant(BaseModel):
         ("NON_VEGETARIAN", "NON_VEGETARIAN"),
         ("BOTH", "BOTH"),
     )
-    name = models.CharField(max_length=255)
-    contact_number = PhoneNumberField()
+    name = models.CharField(max_length=255, db_index=True)
+    phone_number = PhoneNumberField(db_index=True)
     outlet = models.ForeignKey(
         RestaurantOutlet,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        on_delete=models.PROTECT,
         related_name="restaurants",
+        db_index=True,
     )
-    cuisine = models.CharField(max_length=255)
-    type_of_food = models.CharField(max_length=255, choices=FOOD_TYPES)
-    menu_image = models.ManyToManyField(Image)
-    invoicing_email = models.EmailField()
-    is_open = models.BooleanField(default=False)
-    owner_name = models.CharField(max_length=255)
-    owner_email = models.EmailField()
+    cuisine = models.CharField(max_length=255, db_index=True)
+    type_of_food = models.CharField(max_length=14, choices=FOOD_TYPES, db_index=True)
+    menu_image = models.ManyToManyField(Image, db_index=True)
+    invoicing_email = models.EmailField(db_index=True)
+    is_open = models.BooleanField(default=False, db_index=True)
+    owner_name = models.CharField(max_length=255, db_index=True)
+    owner_email = models.EmailField(db_index=True)
+    images = models.ManyToManyField(Image, db_index=True)
+    license_image = models.ImageField(
+        upload_to=upload_image_path, validators=validate_image_size, db_index=True
+    )
+    license_registration_number = models.IntegerField(db_index=True)
+    license_expiration_date = models.DateField(db_index=True)
 
-    license_image = models.FileField(upload_to=upload_image_path)
-    license_registration_number = models.IntegerField()
-    license_expiration_date = models.DateField()
-
-    bank_account_image = models.ManyToManyField(Image)
-    bank_account_number = models.CharField(max_length=255)
-    bank_ifsc_code = models.CharField(max_length=11)
+    bank_account_image = models.ManyToManyField(Image, db_index=True)
+    bank_account_number = models.CharField(max_length=255, db_index=True)
+    bank_ifsc_code = models.CharField(max_length=11, db_index=True)
 
     parent_restaurant = models.ForeignKey(
         "self",
@@ -238,13 +258,10 @@ class Restaurant(BaseModel):
         null=True,
         blank=True,
         related_name="branches",
+        db_index=True,
     )
     location = models.ForeignKey(
-        Location,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="restaurants",
+        Location, on_delete=models.PROTECT, related_name="restaurants", db_index=True
     )
     manager = models.ForeignKey(
         CustomUser,
@@ -252,6 +269,7 @@ class Restaurant(BaseModel):
         null=True,
         blank=True,
         related_name="restaurants",
+        db_index=True,
     )
 
     def __str__(self):
@@ -270,18 +288,23 @@ class RestaurantDocument(BaseModel):
     restaurant(ForeignKey): Represents restaurant id
     document_type(Enum): Type of document
     document_number(CharField): Document number
-    document_image(FileFIeld): Image of document
+    document_image(ImageField): Image of document
     """
 
     restaurant = models.ForeignKey(
-        Restaurant, on_delete=models.CASCADE, related_name="restaurant_documents"
+        Restaurant,
+        on_delete=models.CASCADE,
+        related_name="restaurant_documents",
+        db_index=True,
     )
     document_type = models.CharField(
-        max_length=255, help_text="type of documents as GST,PAN etc."
+        max_length=255, help_text="type of documents as GST,PAN etc.", db_index=True
     )
-    document_number = models.CharField(max_length=255)
+    document_number = models.CharField(max_length=255, db_index=True)
 
-    document_image = models.FileField(upload_to=upload_image_path)
+    document_image = models.ImageField(
+        upload_to=upload_image_path, validators=validate_image_size
+    )
 
     def __str__(self):
         return self.document_type
@@ -309,12 +332,18 @@ class RestaurantRequest(BaseModel):
     """
 
     restaurant = models.ForeignKey(
-        Restaurant, on_delete=models.CASCADE, related_name="restaurant_requests"
+        Restaurant,
+        on_delete=models.CASCADE,
+        related_name="restaurant_requests",
+        db_index=True,
     )
     status = models.CharField(
-        max_length=255, choices=RestaurantStatusEnum.choices, default="PENDING"
+        max_length=255,
+        choices=RestaurantStatusEnum.choices,
+        default=RestaurantStatusEnum.PENDING,
+        db_index=True,
     )
-    reason = models.TextField()
+    reason = models.TextField(null=True, blank=True, db_index=True)
 
     def __str__(self):
         return self.restaurant.name
