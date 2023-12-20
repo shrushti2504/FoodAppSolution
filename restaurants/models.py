@@ -21,8 +21,10 @@ def upload_image_path(filename, instance):
         )
     elif instance.bank_account_image:
         upload_path = f"restaurant/documents/bank/{filename}"
-    else:
+    elif instance.license_image:
         upload_path = f"restaurant/documents/license/{filename}"
+    else:
+        upload_path = f"restaurant/documents/restaurant_images/{filename}"
     return upload_path
 
 
@@ -71,7 +73,7 @@ class BaseModel(models.Model):
         on_delete=models.DO_NOTHING,
         null=True,
         blank=True,
-        related_name="%(class)s_updates_by",
+        related_name="%(class)s_updated_by",
     )
     deleted_by = models.ForeignKey(
         "CustomUser",
@@ -112,7 +114,7 @@ class CustomUser(BaseModel, AbstractUser):
     email = models.EmailField(unique=True, db_index=True)
     contact_number = PhoneNumberField(null=True, blank=True, db_index=True)
     type = models.CharField(
-        max_length=255, choices=TYPES, default="CUSTOMER", db_index=True
+        max_length=255, choices=TYPES, default=TYPES.CUSTOMER, db_index=True
     )
     profile_image = models.ImageField(
         null=True,
@@ -200,7 +202,7 @@ class Restaurant(BaseModel):
     Attributes:
 
     name(CharField): name of the restaurant
-    phone(IntegerField): contact number of restaurant
+    phone_number(PhoneNumberField): contact number of restaurant
     outlet(Foreignkey): the outlet of the restaurant (means type like cafe or diner etc.)
     cuisine(CharField): Cuisines of restaurants like Indian , Chinese , Panjabi etc.
     type_of_food(CharField): Food type like vegetarian , non-vegetarian or both.
@@ -209,6 +211,7 @@ class Restaurant(BaseModel):
     is_open(BooleanField) : Set to true when restaurant is open
     owner_name(CharField): Name of the restaurant owner
     owner_email(EmailField): Email address of restaurant owner
+    image(ManyToManyField): restaurant_images
     license_image(ImageField): FSSAI license image
     license_registration_number(IntegerField): FSSAI license number
     license_expiration_date(DateField): FSSAI license expire date
@@ -327,7 +330,7 @@ class RestaurantRequest(BaseModel):
     Attributes:
 
     restaurant(ForeignKey): Restaurant id
-    approval_status(Enum): Status of restaurant request like pending, approved, in_review or declined.
+    status(Enum): Status of restaurant request like pending, approved, in_review or declined.
     reason(TextField): Reason if admin decline the request
     """
 
